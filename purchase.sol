@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.7;
-
+pragma solidity ^0.8.7;
 
 contract OnlinePurchaseAgreement {
-
-    uint256 public value;
+    uint256 public price;
+    uint256 public sent;
     address payable public buyer;
     address payable public seller;
 
-    enum PurchaseStatus{
+    enum PurchaseStatus {
         CREATED,
         LOCKED,
         ITEM_RECEIVED,
@@ -20,53 +19,105 @@ contract OnlinePurchaseAgreement {
 
     PurchaseStatus public purchaseStatus;
 
-    event ContractLocked(address indexed buyer, address indexed seller, uint256 purchageAmount, PurchaseStatus status);
-    event ItemReceived(address indexed buyer, address indexed seller, uint256 purchageAmount, PurchaseStatus status);
-    event ContractCompleted(address indexed buyer, address indexed seller, uint256 purchageAmount, PurchaseStatus status);
+    event ContractLocked(
+        address indexed buyer,
+        address indexed seller,
+        uint256 purchageAmount,
+        PurchaseStatus status
+    );
+    event ItemReceived(
+        address indexed buyer,
+        address indexed seller,
+        uint256 purchageAmount,
+        PurchaseStatus status
+    );
+    event ContractCompleted(
+        address indexed buyer,
+        address indexed seller,
+        uint256 purchageAmount,
+        PurchaseStatus status
+    );
     event ContractAborted(address indexed buyer, PurchaseStatus status);
 
     modifier inState(PurchaseStatus _status) {
-        require(purchaseStatus == _status,"Cant run this function in current state." );
+        require(
+            purchaseStatus == _status,
+            "Cant run this function in current state."
+        );
         _;
     }
 
-    constructor(uint256 _value) payable {
-        require(_value == msg.value, "Please send correct amount. Same as purchase amount");
-       
-        value = _value;
-        
+    constructor() payable {
+        price = msg.value;
+
         seller = payable(msg.sender);
     }
 
-    function confirmPurchase() external payable inState(PurchaseStatus.CREATED){
-        
-        require(msg.value == 2*value, "Please send twice the purchase amount");
+    // modifier to check if msg.sender is the seller
+    modifier onlySeller() {
+        require(msg.sender == seller, "Only seller can call this method");
+        _;
+    }
+
+    /**
+     * @dev allows a user to purchase the item
+     * @notice the amount sent needs to be twice the purchase amount
+     */
+    function confirmPurchase()
+        external
+        payable
+        inState(PurchaseStatus.CREATED)
+    {
+        require(
+            msg.value == 2 * price,
+            "Please send twice the purchase amount"
+        );
 
         buyer = payable(msg.sender);
+        sent = msg.value;
         purchaseStatus = PurchaseStatus.LOCKED;
-        
-        emit ContractLocked(buyer, seller, value, purchaseStatus);
-        
+
+        emit ContractLocked(buyer, seller, sent, purchaseStatus);
     }
 
-    function confirmReceived() external inState(PurchaseStatus.LOCKED) {
-        require(msg.sender==buyer,"Only buyer can call this method");
+    /**
+     * @dev allows the buyer to confirm that he received the item and returns back the price amount
+     */
+    function confirmReceived() external payable inState(PurchaseStatus.LOCKED) {
+        require(msg.sender == buyer, "Only buyer can call this method");
         purchaseStatus = PurchaseStatus.ITEM_RECEIVED;
-        buyer.transfer(value);
-        emit ItemReceived(buyer, seller, value, purchaseStatus);
+        uint256 amount = price;
+        price = 0;
+        (bool success, ) = payable(buyer).call{value: amount}("");
+        require(success, "Transfer failed");
+        emit ItemReceived(buyer, seller, amount, purchaseStatus);
     }
 
-    function paySeller() external inState(PurchaseStatus.ITEM_RECEIVED){
-        require(msg.sender==seller,"Only seller can call this method");
+    /**
+     * @dev allows the seller to retrieve his initial deposit amount and the price amount through the amount stored in sent
+     */
+    function paySeller()
+        external
+        inState(PurchaseStatus.ITEM_RECEIVED)
+        onlySeller
+    {
         purchaseStatus = PurchaseStatus.COMPLETED;
-        seller.transfer(2*value);
-        emit ContractCompleted(buyer, seller, value, purchaseStatus);
+        uint256 amount = sent;
+        sent = 0;
+        (bool success, ) = payable(seller).call{value: amount}("");
+        require(success, "Transfer failed");
+        emit ContractCompleted(buyer, seller, amount, purchaseStatus);
     }
 
-    function abort() external inState(PurchaseStatus.CREATED){
-        require(msg.sender==seller,"Onlyseller can call this method");
+    /**
+     * @dev allows the seller to abort the sale and return back the initial deposit made during deployment
+     */
+    function abort() external inState(PurchaseStatus.CREATED) onlySeller {
         purchaseStatus = PurchaseStatus.INACTIVE;
-        seller.transfer(value);
-        emit ContractAborted(buyer, purchaseStatus);
+        uint256 amount = price;
+        price = 0;
+        (bool success, ) = payable(seller).call{value: amount}("");
+        require(success, "Transfer failed");
+        emit ContractAborted(seller, purchaseStatus);
     }
 }
