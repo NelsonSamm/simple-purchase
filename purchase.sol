@@ -64,7 +64,7 @@ contract OnlinePurchaseAgreement {
      * @notice the amount sent needs to be twice the purchase amount
      */
     function confirmPurchase()
-        external
+        public
         payable
         inState(PurchaseStatus.CREATED)
     {
@@ -83,7 +83,7 @@ contract OnlinePurchaseAgreement {
     /**
      * @dev allows the buyer to confirm that he received the item and returns back the price amount
      */
-    function confirmReceived() external payable inState(PurchaseStatus.LOCKED) {
+    function confirmReceived() public payable inState(PurchaseStatus.LOCKED) {
         require(msg.sender == buyer, "Only buyer can call this method");
         purchaseStatus = PurchaseStatus.ITEM_RECEIVED;
         uint256 amount = price;
@@ -97,7 +97,7 @@ contract OnlinePurchaseAgreement {
      * @dev allows the seller to retrieve his initial deposit amount and the price amount through the amount stored in sent
      */
     function paySeller()
-        external
+        public
         inState(PurchaseStatus.ITEM_RECEIVED)
         onlySeller
     {
@@ -112,7 +112,7 @@ contract OnlinePurchaseAgreement {
     /**
      * @dev allows the seller to abort the sale and return back the initial deposit made during deployment
      */
-    function abort() external inState(PurchaseStatus.CREATED) onlySeller {
+    function abort() public payable inState(PurchaseStatus.CREATED) onlySeller {
         purchaseStatus = PurchaseStatus.INACTIVE;
         uint256 amount = price;
         price = 0;
